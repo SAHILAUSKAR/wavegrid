@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { generateWebsite, enhancePrompt } from "@/lib/builder.functions";
 import { hasSongKeyword } from "@/lib/prompt-intercept";
+import { assembleBundle, FILE_ORDER, type FileName, type ProjectFiles } from "@/lib/bundle";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -53,16 +54,18 @@ const EMPTY_DOC = `<!DOCTYPE html><html><head><meta name="viewport" content="wid
 
 function Builder() {
   const [prompt, setPrompt] = useState("");
-  const [html, setHtml] = useState("");
+  const [files, setFiles] = useState<ProjectFiles | null>(null);
+  const [activeFile, setActiveFile] = useState<FileName>("index.html");
   const [busy, setBusy] = useState<"idle" | "enhance" | "generate">("idle");
   const [view, setView] = useState<"desktop" | "mobile">("desktop");
-  const [showCode, setShowCode] = useState(false);
+  const [showConsole, setShowConsole] = useState(false);
   const frameKey = useRef(0);
 
   const generate = useServerFn(generateWebsite);
   const enhance = useServerFn(enhancePrompt);
 
   const songMode = useMemo(() => hasSongKeyword(prompt), [prompt]);
+  const html = useMemo(() => (files ? assembleBundle(files) : ""), [files]);
 
   const onEnhance = useCallback(async () => {
     if (!prompt.trim() || busy !== "idle") return;
@@ -84,8 +87,8 @@ function Builder() {
     try {
       const res = await generate({ data: { prompt } });
       frameKey.current += 1;
-      setHtml(res.html);
-      toast.success(res.intercepted ? "Music studio app generated" : "Website generated");
+      setFiles(res.files);
+      toast.success(res.intercepted ? "Modular studio project generated" : "Project generated");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Generation failed");
     } finally {
@@ -93,17 +96,23 @@ function Builder() {
     }
   }, [prompt, busy, generate]);
 
-  const onDownload = useCallback(() => {
-    if (!html) return;
-    const blob = new Blob([html], { type: "text/html" });
+  const download = useCallback((name: string, content: string) => {
+    const blob = new Blob([content], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "index.html";
+    a.download = name;
     a.click();
     URL.revokeObjectURL(url);
-    toast.success("index.html downloaded");
-  }, [html]);
+  }, []);
+
+  const onDownloadAll = useCallback(() => {
+    if (!files) return;
+    for (const name of FILE_ORDER) {
+      if (files[name].trim()) download(name, files[name]);
+    }
+    toast.success("Project files downloaded");
+  }, [files, download]);
 
   const working = busy !== "idle";
 
@@ -120,7 +129,7 @@ function Builder() {
             <div className="leading-tight">
               <h1 className="text-base font-semibold tracking-tight">Forge Studio</h1>
               <p className="hidden text-xs text-muted-foreground sm:block">
-                Prompt-to-app generation engine
+                Modular prompt-to-app generation engine
               </p>
             </div>
           </div>
@@ -143,15 +152,15 @@ function Builder() {
               </button>
             </div>
             <Button
-              variant="outline"
+              variant={showConsole ? "secondary" : "outline"}
               size="sm"
-              onClick={() => setShowCode((s) => !s)}
-              disabled={!html}
+              onClick={() => setShowConsole((s) => !s)}
+              disabled={!files}
             >
               <Code2 className="size-4" />
-              <span className="hidden sm:inline">{showCode ? "Preview" : "Code"}</span>
+              <span className="hidden sm:inline">Dev Console</span>
             </Button>
-            <Button size="sm" onClick={onDownload} disabled={!html}>
+            <Button size="sm" onClick={onDownloadAll} disabled={!files}>
               <Download className="size-4" />
               <span className="hidden sm:inline">Download</span>
             </Button>
@@ -171,7 +180,7 @@ function Builder() {
             id="prompt"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Describe the website you want to build..."
+            placeholder="Describe the app you want to build..."
             className="mt-2 min-h-40 resize-none bg-background/60 text-sm leading-relaxed"
           />
 
@@ -191,8 +200,8 @@ function Builder() {
             <div className="mt-3 flex gap-2 rounded-xl border border-primary/40 bg-primary/10 p-3 text-xs text-foreground">
               <Music4 className="mt-0.5 size-4 shrink-0 text-primary" />
               <p>
-                Studio mode detected — this build becomes a BandLab-style multi-track DAW with a
-                Suno-style AI music panel, transport controls and a live playhead.
+                Studio mode detected — a modular DAW with a compressor-protected audio engine,
+                look-ahead scheduling and drag-and-drop audio import.
               </p>
             </div>
           )}
@@ -221,9 +230,9 @@ function Builder() {
               ) : (
                 <Sparkles className="size-4" />
               )}
-              Generate Website
+              Generate Project
             </Button>
-            {html && (
+            {files && (
               <Button variant="ghost" onClick={onGenerate} disabled={working} className="w-full">
                 <RefreshCw className="size-4" />
                 Regenerate
@@ -232,50 +241,81 @@ function Builder() {
           </div>
 
           <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-            Output is raw HTML + Tailwind, rendered live in the preview frame and ready to download
-            as a single file.
+            Every build ships as four files — index.html, style.css, audioEngine.js and
+            uiController.js — bundled live into the preview frame.
           </p>
         </aside>
 
-        <section className="min-h-[70vh]">
+        <section
+          className={`grid min-h-[70vh] gap-4 ${showConsole ? "xl:grid-cols-2" : "grid-cols-1"}`}
+        >
           <div className="grid-dots overflow-hidden rounded-2xl border border-border bg-card">
             <div className="flex items-center gap-2 border-b border-border bg-background/60 px-3 py-2">
               <span className="size-2.5 rounded-full bg-destructive/70" />
               <span className="size-2.5 rounded-full bg-accent/70" />
               <span className="size-2.5 rounded-full bg-primary/70" />
-              <span className="ml-2 truncate text-xs text-muted-foreground">
-                {showCode ? "source · index.html" : "localhost:preview"}
-              </span>
+              <span className="ml-2 truncate text-xs text-muted-foreground">localhost:preview</span>
             </div>
 
-            {showCode ? (
-              <pre className="max-h-[calc(100vh-11rem)] overflow-auto bg-background/80 p-4 text-xs leading-relaxed text-muted-foreground">
-                <code>{html}</code>
-              </pre>
-            ) : (
-              <div className="flex justify-center bg-background/40 p-2 sm:p-4">
-                <div
-                  className={`relative w-full transition-all duration-300 ${view === "mobile" ? "max-w-[390px]" : "max-w-none"}`}
-                >
-                  {busy === "generate" && (
-                    <div className="absolute inset-0 z-10 grid place-items-center rounded-xl bg-background/80 backdrop-blur-sm">
-                      <div className="flex flex-col items-center gap-3">
-                        <Loader2 className="size-7 animate-spin text-primary" />
-                        <p className="text-sm text-muted-foreground">Building your app…</p>
-                      </div>
+            <div className="flex justify-center bg-background/40 p-2 sm:p-4">
+              <div
+                className={`relative w-full transition-all duration-300 ${view === "mobile" ? "max-w-[390px]" : "max-w-none"}`}
+              >
+                {busy === "generate" && (
+                  <div className="absolute inset-0 z-10 grid place-items-center rounded-xl bg-background/80 backdrop-blur-sm">
+                    <div className="flex flex-col items-center gap-3">
+                      <Loader2 className="size-7 animate-spin text-primary" />
+                      <p className="text-sm text-muted-foreground">Building your project…</p>
                     </div>
-                  )}
-                  <iframe
-                    key={frameKey.current}
-                    title="Generated website preview"
-                    srcDoc={html || EMPTY_DOC}
-                    sandbox="allow-scripts allow-forms allow-modals allow-popups"
-                    className="h-[calc(100vh-13rem)] min-h-[520px] w-full rounded-xl border border-border bg-white"
-                  />
-                </div>
+                  </div>
+                )}
+                <iframe
+                  key={frameKey.current}
+                  title="Generated app preview"
+                  srcDoc={html || EMPTY_DOC}
+                  sandbox="allow-scripts allow-forms allow-modals allow-popups"
+                  className="h-[calc(100vh-13rem)] min-h-[520px] w-full rounded-xl border border-border bg-white"
+                />
               </div>
-            )}
+            </div>
           </div>
+
+          {showConsole && files && (
+            <div className="overflow-hidden rounded-2xl border border-border bg-card">
+              <div className="flex items-center justify-between gap-2 border-b border-border bg-background/60 px-3 py-2">
+                <span className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                  Developer Code Console
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => download(activeFile, files[activeFile])}
+                >
+                  <Download className="size-4" />
+                </Button>
+              </div>
+
+              <div className="flex flex-wrap gap-1 border-b border-border bg-background/40 px-2 py-2">
+                {FILE_ORDER.map((name) => (
+                  <button
+                    key={name}
+                    onClick={() => setActiveFile(name)}
+                    className={`rounded-md px-2.5 py-1 font-mono text-xs transition-colors ${
+                      activeFile === name
+                        ? "bg-secondary text-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {name}
+                  </button>
+                ))}
+              </div>
+
+              <pre className="max-h-[calc(100vh-15rem)] overflow-auto bg-background/80 p-4 text-xs leading-relaxed text-muted-foreground">
+                <code>{files[activeFile] || "// empty"}</code>
+              </pre>
+            </div>
+          )}
         </section>
       </main>
     </div>
