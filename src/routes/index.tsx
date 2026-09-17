@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { generateWebsite, enhancePrompt } from "@/lib/builder.functions";
 import { hasSongKeyword } from "@/lib/prompt-intercept";
+import { assembleBundle, FILE_ORDER, type FileName, type ProjectFiles } from "@/lib/bundle";
 
 export const Route = createFileRoute("/")({
   head: () => ({
