@@ -3,9 +3,9 @@ const MODEL = "openai/gpt-6-astra";
 
 function stripFences(text: string) {
   let out = text.trim();
-  out = out.replace(/^```(?:html|HTML)?\s*/, "").replace(/```\s*$/, "");
-  const start = out.search(/<!DOCTYPE html|<html/i);
-  if (start > 0) out = out.slice(start);
+  // Only remove markdown fences — never slice into the payload, the generator
+  // returns JSON whose string values legitimately contain "<!DOCTYPE html".
+  out = out.replace(/^```(?:json|html|JSON|HTML)?\s*/, "").replace(/```\s*$/, "");
   return out.trim();
 }
 
